@@ -651,10 +651,9 @@ namespace phy {
 			// | Check for collisions: |
 			// o --------------------- o
 			for (Entity* other : entities) {
-				if (e == other) continue;
+				if (e == other) continue; // don't hit yourself.
 				
 
-				// Check for touching:
 				if (e->Collides(axis, *other, timeScale, out_collisionSpot, out_collisionSide)) {
 					if (e->CompareCollisionGroups(*other)) {
 						// one of many collisions has occurred
@@ -718,9 +717,12 @@ namespace phy {
 				if (e->IsDynamic()) {
 					DynamicEntity& entity = *(DynamicEntity*)e;
 
-					// dynamic-dynamic collision:
-					// --------------------------
 					if (closestEntity->IsDynamic()) {
+
+						// o ----------------------------- o
+						// | Dynamic -> Dynamic collision: |
+						// o ----------------------------- o
+
 						DynamicEntity& other = *(DynamicEntity*)closestEntity;
 						// get relative force of collision, and call it normal force even though you're not sure if that's technically right...
 						float normalForce =
@@ -752,7 +754,7 @@ namespace phy {
 
 						// static friction:
 						float relativeVeloctiy = entity.velocity.Axis(axis.AxisSwapped()) - other.velocity.Axis(axis.AxisSwapped()); // *relative to entity not other.
-						float averageFriction = (entity.friction_coef * other.friction_coef) / 2;
+						float averageFriction = (entity.friction_coef + other.friction_coef) / 2;
 
 						fvector2 force = { 0, 0 };
 						force.ref_Axis(axis.AxisSwapped()) = averageFriction * std::abs(normalForce) * -cmp::sign(relativeVeloctiy);
@@ -761,8 +763,15 @@ namespace phy {
 						other.AddForce(force * -1);
 					}
 					else {
+						// o --------------------------------- o
+						// | Dynamic -> not_Dynamic collision: |
+						// o --------------------------------- o
+
 						// effect of collision:
+						// -------------------
+
 						entity.velocity.ref_Axis(axis) *= -entity.bounce;
+
 
 						// get relative force of collision, and call it normal force even though you're not sure if that's technically right...
 						float normalForce = 0;
@@ -791,7 +800,7 @@ namespace phy {
 						// omg friction is complicated
 
 						// static friction:
-						float averageFriction = (entity.friction_coef * closestEntity->friction_coef) / 2;
+						float averageFriction = (entity.friction_coef + closestEntity->friction_coef) / 2;
 
 						fvector2 force = { 0, 0 };
 						force.ref_Axis(axis.AxisSwapped()) = averageFriction * std::abs(normalForce) * -cmp::sign(relativeVeloctiy);
@@ -802,10 +811,17 @@ namespace phy {
 				else {
 					MovableEntity& entity = *e;
 					if (closestEntity->IsDynamic()) {
+						// o --------------------------------- o
+						// | not_Dynamic -> Dynamic collision: |
+						// o --------------------------------- o
+
 						DynamicEntity& other = *(DynamicEntity*)closestEntity;
 						other.velocity.ref_Axis(axis) = entity.velocity.Axis(axis);
 					}
 					else {
+						// o ------------------------------------- o
+						// | not_Dynamic -> non_Dynamic collision: |
+						// o ------------------------------------- o
 						Entity& other = *closestEntity;
 						entity.velocity.ref_Axis(axis) *= -entity.bounce;
 					}
