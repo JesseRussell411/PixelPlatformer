@@ -1,3 +1,4 @@
+// This is in the debugging stage. This code doesn't need to be neat.
 #define OLC_PGE_APPLICATION
 #include "olcPixelGameEngine.h"
 #include "PlatformPhysics.h"
@@ -77,8 +78,8 @@ public:
 		if (GetMouse(0).bPressed || GetMouse(1).bPressed) createPointA = { (float)GetMouseX(), (float)GetMouseY() };
 
 		if (GetMouse(0).bReleased) {
-			phy::DynamicEntity* newent = new phy::DynamicEntity(phy::DynamicEntity::ByPoints(createPointA, fvector2((float)GetMouseX(), (float)GetMouseY()), 1));
-			newent->Mass(newent->Volume() * 0.1);
+			phy::DynamicEntity* newent = new phy::DynamicEntity(phy::DynamicEntity::ByPoints(createPointA, fvector2((float)GetMouseX(), (float)GetMouseY()), player->Mass()));
+			//newent->Mass(newent->Volume() * 0.01);
 			engine.AddEntity(newent);
 		}
 

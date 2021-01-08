@@ -1,2 +1,0 @@
-find SURFACE AREA OF COLLISION for more accurate and realistic friction.
-     -------------------------

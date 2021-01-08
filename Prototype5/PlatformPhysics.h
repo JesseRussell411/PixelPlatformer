@@ -90,6 +90,21 @@ namespace phy {
 		void         Height(const float& value) { size.y = value; }
 
 	public: // Methods:
+		float MeasureIntersection(const Cardinal& axis, const CollisionBox& other) const {
+			// filter axis to either south or east.
+			Cardinal side = axis.AxisFilled() & Cardinal::SOUTH_EAST;
+
+			auto v = cmp::measureIntersection(GetSide(side), GetSide(side.Flipped()), other.GetSide(side), other.GetSide(side.Flipped()));
+			return v;
+		}
+
+		fvector2 MeasureIntersection(const CollisionBox& other) const {
+			return {
+				MeasureIntersection(Cardinal::EAST, other),
+				MeasureIntersection(Cardinal::SOUTH, other)
+			};
+		}
+
 
 		float GetSide(const Cardinal& side) const {
 			switch (side.GetValue()) {
@@ -337,7 +352,8 @@ namespace phy {
 
 	private: // Fields:
 		std::map<size_t, uint8_t> collisionGroupBlocks;
-		float friction_coef = .9;
+		float friction_coef = .1;
+		float bounce = 1;
 
 
 		// o --------------- o
@@ -389,28 +405,31 @@ namespace phy {
 		}
 
 	public: // Properties:
-		const fvector2& Velocity() { return velocity; }
+		const fvector2& Velocity() const { return velocity; }
 		void            Velocity(const fvector2& value) { velocity = value; }
 
-		const float& Bounce() { return bounce; }
+		const float& Velocity(const Cardinal& axis)const  { return velocity.Axis(axis); }
+		void         Velocity(const Cardinal& axis, const float& value) { velocity.ref_Axis(axis) = value; }
+
+		const float& Bounce() const { return bounce; }
 		void         Bounce(const float& value) { bounce = value; }
 
 	public: // Methods:
 		// update:
-		void ApplyVelocity(const Cardinal& axis, const float& timeScale = 1) {
-			Move(velocity.SelectAxis(axis) * timeScale);
+		void ApplyVelocity(const Cardinal& axis, const float& elapsedTime = 1) {
+			Move(velocity.SelectAxis(axis) * elapsedTime);
 		}
-		void ApplyVelocity(const float& timeScale = 1) {
-			Move(velocity * timeScale);
+		void ApplyVelocity(const float& elapsedTime = 1) {
+			Move(velocity * elapsedTime);
 		}
 		//
 
-		CollisionBox GetVelocitySmear(const Cardinal& axis, const float& timeScale) {
-			return Smear(axis, velocity * timeScale);
+		CollisionBox GetVelocitySmear(const Cardinal& axis, const float& elapsedTime) {
+			return Smear(axis, velocity * elapsedTime);
 		}
 
-		CollisionBox GetVelocityOffset(const Cardinal& axis, const float& timeScale) {
-			return Offset(axis, velocity * timeScale);
+		CollisionBox GetVelocityOffset(const Cardinal& axis, const float& elapsedTime) {
+			return Offset(axis, velocity * elapsedTime);
 		}
 
 		Cardinal GetHeading() {
@@ -423,23 +442,20 @@ namespace phy {
 			return result;
 		}
 
-		bool Collides(Cardinal axis, const CollisionBox& other, float timeScale, float& out_collisionSpot, Cardinal& out_collisionSide) {
+		bool Collides(Cardinal axis, const CollisionBox& other, float elapsedTime, float& out_collisionSpot, Cardinal& out_collisionSide) {
 			out_collisionSide = (axis | axis.Flipped()) & GetHeading();
 			out_collisionSpot = other.GetSide((out_collisionSide).Flipped());
 
-			return Collides(axis, other, timeScale);
+			return Collides(axis, other, elapsedTime);
 		}
 
-		bool Collides(Cardinal axis, const CollisionBox& other, float timeScale) {
-			return (GetVelocityOffset(axis, timeScale).Intersects(other));
+		bool Collides(Cardinal axis, const CollisionBox& other, float elapsedTime) {
+			return (GetVelocityOffset(axis, elapsedTime).Intersects(other));
 		}
 
 	private: // Fields:
 		fvector2
 			velocity = { 0, 0 };
-
-		float
-			bounce = 1;
 
 		// o --------------- o
 		// | identification: |
@@ -497,13 +513,14 @@ namespace phy {
 
 	public:
 		void AddForce(const fvector2& force) { netForce += force; }
+		void AddForce(const Cardinal& axis, const float& force) { netForce.AddAxis(axis, force); }
 
 		//update:
-		void ApplyNetForce(const Cardinal& axis, const float& timeScale = 1) {
-			velocity += (netForce.SelectAxis(axis) / mass) * timeScale;
+		void ApplyNetForce(const Cardinal& axis, const float& elapsedTime = 1) {
+			velocity += (netForce.SelectAxis(axis) / mass) * elapsedTime;
 		}
-		void ApplyNetForce(const float& timeScale = 1) {
-			velocity += (netForce / mass) * timeScale;
+		void ApplyNetForce(const float& elapsedTime = 1) {
+			velocity += (netForce / mass) * elapsedTime;
 		}
 
 		void ResetNetForce(const Cardinal& axis = Cardinal::SOUTH_EAST) {
@@ -586,10 +603,10 @@ namespace phy {
 
 
 	public:
-		void Update(Cardinal axis, const float& timeScale) {
+		void Update(Cardinal axis, const float& elapsedTime) {
 			// Update environment properties:
 			this->axis = axis;
-			this->timeScale = timeScale;
+			this->elapsedTime = elapsedTime;
 			// Main loop...
 			for (Entity* e : movableEntities) {
 				e->OnEngineUpdate(*this);
@@ -615,6 +632,7 @@ namespace phy {
 			Cardinal closestSide;
 			Entity* closestEntity = nullptr;
 			bool collided = false;
+			float surfaceArea = 0;
 
 
 			// o ------------------- o
@@ -642,7 +660,7 @@ namespace phy {
 			// | Apply net force: |
 			// o ---------------- o
 			if (e->IsDynamic()) {
-				((DynamicEntity*)e)->ApplyNetForce(axis, timeScale);
+				((DynamicEntity*)e)->ApplyNetForce(axis, elapsedTime);
 				((DynamicEntity*)e)->ResetNetForce(axis);
 			}
 
@@ -654,7 +672,7 @@ namespace phy {
 				if (e == other) continue; // don't hit yourself.
 				
 
-				if (e->Collides(axis, *other, timeScale, out_collisionSpot, out_collisionSide)) {
+				if (e->Collides(axis, *other, elapsedTime, out_collisionSpot, out_collisionSide)) {
 					if (e->CompareCollisionGroups(*other)) {
 						// one of many collisions has occurred
 						if (collided) {
@@ -678,6 +696,11 @@ namespace phy {
 						e->onIntersection(*this, *other, out_collisionSide, out_collisionSpot);
 					}
 				}
+			}
+
+			// Get collision surface area...
+			if (collided) {
+				surfaceArea = e->MeasureIntersection(axis.AxisSwapped(), *closestEntity);
 			}
 
 			// Run special collision code...
@@ -711,26 +734,38 @@ namespace phy {
 			// o ---------------- o
 			if (collided && trueCollision) {
 				float spot = closestSpot;
-				Cardinal side = out_collisionSide;
-				e->SetPositionOnSide(side, spot);
+				Cardinal side = closestSide;
+				Entity* other = closestEntity;
 
+				// Move entity flush against other entity.
+				e->SetPositionOnSide(side, spot);
 				if (e->IsDynamic()) {
 					DynamicEntity& entity = *(DynamicEntity*)e;
 
-					if (closestEntity->IsDynamic()) {
+					float collisionForce = entity.mass * entity.Velocity(axis) / elapsedTime;
 
+					if (other->IsMovable()) {
+						float other_mass = other->IsDynamic() ? ((DynamicEntity*)other)->mass : entity.mass;
+						collisionForce += other_mass * ((MovableEntity*)other)->Velocity(axis) / elapsedTime;
+					}
+
+					if (other->IsDynamic()) ((DynamicEntity*)other)->AddForce(axis, collisionForce);
+
+					entity.AddForce(axis, -collisionForce);
+
+
+
+
+
+					/*
+					if (closestEntity->IsDynamic()) {
+						DynamicEntity& other = *(DynamicEntity*)closestEntity;
 						// o ----------------------------- o
 						// | Dynamic -> Dynamic collision: |
 						// o ----------------------------- o
 
-						DynamicEntity& other = *(DynamicEntity*)closestEntity;
-						// get relative force of collision, and call it normal force even though you're not sure if that's technically right...
-						float normalForce =
-							entity.mass * (entity.velocity.Axis(axis) / timeScale) +
-							other.mass * (other.velocity.Axis(axis) / timeScale);
 						// effect of collision:
 						// -------------------
-
 						// Get new velocity:
 						float other_vf =
 							(2 * entity.mass / (entity.mass + other.mass)) * entity.velocity.Axis(axis) -
@@ -740,79 +775,28 @@ namespace phy {
 							((entity.mass - other.mass) / (entity.mass + other.mass)) * entity.velocity.Axis(axis) +
 							(2 * other.mass / (entity.mass + other.mass)) * other.velocity.Axis(axis);
 
-						// average bounce.
-						float averageBounce = (entity.bounce + other.bounce) / 2;
-
+						
 						// Set new velocity:
-						entity.velocity.ref_Axis(axis) = entity_vf * averageBounce;
-						other.velocity.ref_Axis(axis) = other_vf * averageBounce;
+						entity.velocity.ref_Axis(axis) = entity_vf;
+						other.velocity.ref_Axis(axis) = other_vf;
 						//
-
-						// effect of friction (continues from | Apply other forces: |):
-						// -------------------
-						// omg friction is complicated
-
-						// static friction:
-						float relativeVeloctiy = entity.velocity.Axis(axis.AxisSwapped()) - other.velocity.Axis(axis.AxisSwapped()); // *relative to entity not other.
-						float averageFriction = (entity.friction_coef + other.friction_coef) / 2;
-
-						fvector2 force = { 0, 0 };
-						force.ref_Axis(axis.AxisSwapped()) = averageFriction * std::abs(normalForce) * -cmp::sign(relativeVeloctiy);
-
-						entity.AddForce(force);
-						other.AddForce(force * -1);
 					}
 					else {
 						// o --------------------------------- o
-						// | Dynamic -> not_Dynamic collision: |
+						// | Dynamic -> non_Dynamic collision: |
 						// o --------------------------------- o
 
 						// effect of collision:
 						// -------------------
-
-						entity.velocity.ref_Axis(axis) *= -entity.bounce;
-
-
-						// get relative force of collision, and call it normal force even though you're not sure if that's technically right...
-						float normalForce = 0;
-						float relativeVeloctiy = 0; // *relative to entity not other.
-
-						// if other is movable
-						if (closestEntity->IsMovable()) {
-							MovableEntity& other_me = *((MovableEntity*)closestEntity);
-							normalForce =
-								entity.mass * (entity.velocity.Axis(axis)   / timeScale) +
-								entity.mass * (other_me.velocity.Axis(axis) / timeScale);
-
-							relativeVeloctiy =
-								entity.velocity.Axis(axis.AxisSwapped()) - other_me.velocity.Axis(axis.AxisSwapped());
-						}
-						// if other is not movable
-						else {
-							normalForce =
-								entity.mass * (entity.velocity.Axis(axis) / timeScale);
-
-							relativeVeloctiy = entity.velocity.Axis(axis.AxisSwapped());
-						}
-
-						// effect of friction (continues from | Apply other forces: |):
-						// -------------------
-						// omg friction is complicated
-
-						// static friction:
-						float averageFriction = (entity.friction_coef + closestEntity->friction_coef) / 2;
-
-						fvector2 force = { 0, 0 };
-						force.ref_Axis(axis.AxisSwapped()) = averageFriction * std::abs(normalForce) * -cmp::sign(relativeVeloctiy);
-
-						entity.AddForce(force);
+						entity.velocity.ref_Axis(axis) *= -1;
 					}
+					*/
 				}
 				else {
 					MovableEntity& entity = *e;
 					if (closestEntity->IsDynamic()) {
 						// o --------------------------------- o
-						// | not_Dynamic -> Dynamic collision: |
+						// | non_Dynamic -> Dynamic collision: |
 						// o --------------------------------- o
 
 						DynamicEntity& other = *(DynamicEntity*)closestEntity;
@@ -820,7 +804,7 @@ namespace phy {
 					}
 					else {
 						// o ------------------------------------- o
-						// | not_Dynamic -> non_Dynamic collision: |
+						// | non_Dynamic -> non_Dynamic collision: |
 						// o ------------------------------------- o
 						Entity& other = *closestEntity;
 						entity.velocity.ref_Axis(axis) *= -entity.bounce;
@@ -832,7 +816,7 @@ namespace phy {
 			// | Apply velocity: |
 			// o --------------- o
 			if (!collided) {
-				e->ApplyVelocity(axis, timeScale);
+				e->ApplyVelocity(axis, elapsedTime);
 			}
 		}
 
@@ -840,9 +824,9 @@ namespace phy {
 		std::set<Entity*> entities;
 		std::set<MovableEntity*> movableEntities;
 		Cardinal axis = Cardinal::NONE;
-		float timeScale = 1;
+		float elapsedTime = 1;
 
-		float airDensity = 0;
-		fvector2 gravity_acc = { 0, 98 };
+		float airDensity = .05;
+		fvector2 gravity_acc = { 0, 0 };
 	};
 }
