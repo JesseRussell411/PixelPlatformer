@@ -741,23 +741,6 @@ namespace phy {
 				e->SetPositionOnSide(side, spot);
 				if (e->IsDynamic()) {
 					DynamicEntity& entity = *(DynamicEntity*)e;
-
-					float collisionForce = entity.mass * entity.Velocity(axis) / elapsedTime;
-
-					if (other->IsMovable()) {
-						float other_mass = other->IsDynamic() ? ((DynamicEntity*)other)->mass : entity.mass;
-						collisionForce += other_mass * ((MovableEntity*)other)->Velocity(axis) / elapsedTime;
-					}
-
-					if (other->IsDynamic()) ((DynamicEntity*)other)->AddForce(axis, collisionForce);
-
-					entity.AddForce(axis, -collisionForce);
-
-
-
-
-
-					/*
 					if (closestEntity->IsDynamic()) {
 						DynamicEntity& other = *(DynamicEntity*)closestEntity;
 						// o ----------------------------- o
@@ -790,7 +773,7 @@ namespace phy {
 						// -------------------
 						entity.velocity.ref_Axis(axis) *= -1;
 					}
-					*/
+					
 				}
 				else {
 					MovableEntity& entity = *e;
